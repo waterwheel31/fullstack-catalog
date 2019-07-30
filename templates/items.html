@@ -1,0 +1,28 @@
+<html> 
+    <head>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='styles.css') }}">
+    </head>
+    <body>
+        <h1>catalog app</h1>
+        <br>
+
+        
+        <h2>items of category:{{category.name}}</h2>
+        <hr>
+        {% for item in items %}
+            <p>
+                <a href='{{url_for('showItemInfo', item_id=item.id)}}'> {{item.name}} </a>:
+                <a href='{{url_for('itemDelete', item_id=item.id)}}'> delete </a>/
+                <a href='{{url_for('itemEdit', item_id=item.id)}}'> edit </a>
+                
+            </p>
+        {% endfor %}
+
+        
+        <hr>
+        <a href='{{url_for('itemCreate')}}'> Add an item </a>
+
+
+    </body>
+
+</html>

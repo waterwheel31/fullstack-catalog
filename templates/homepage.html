@@ -1,0 +1,36 @@
+<html> 
+    <head>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='styles.css') }}">
+    </head>
+    <body>
+        <h1>catalog app</h1>
+        <br>
+
+        <h2>categories</h2>
+        <hr>
+        {% for category in categories %}
+            <p>
+                <a href = '{{url_for('showCategoryItems', category_id=category.id)}}'>{{category.name}} </a>
+
+            </p>
+        {% endfor %}
+       
+        <h2>latest items</h2>
+        <hr>
+        {% for item in recent_items %}
+            <p>
+                <a href='{{url_for('showItemInfo', item_id=item.id)}}'> {{item.name}} </a>:
+                <a href='{{url_for('itemDelete', item_id=item.id)}}'> delete </a>/
+                <a href='{{url_for('itemEdit', item_id=item.id)}}'> edit </a>
+                
+            </p>
+        {% endfor %}
+
+        
+        <hr>
+        <a href='{{url_for('itemCreate')}}'> Add an item </a>
+
+
+    </body>
+
+</html>
