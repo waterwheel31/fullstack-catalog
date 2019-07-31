@@ -2,71 +2,48 @@
 <html>
 <head>
         <link rel=stylesheet type=text/css href="{{ url_for('static', filename='styles.css') }}">
-        <!--LOAD PRE-REQUISITES FOR GOOGLE SIGN IN -->
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
-        <script src="https://apis.google.com/js/client:platform.js?onload=start" async defer></script>
-        
-        <script>
-                function start() {
-                  gapi.load('auth2', function() {
-                    auth2 = gapi.auth2.init({
-                      client_id: '307676870645-3o103sna7q4q8c4a038jjdchh5s9hsdc.apps.googleusercontent.com'
-                    });
-                  });
-                }
-        </script>
-        
-        <!-- END PRE-REQUISITES FOR GOOGLE SIGN IN -->
+        <meta name="google-signin-client_id" content={{CLIENT_ID}}>
+        <script src="https://apis.google.com/js/platform.js" async defer></script>
 </head>
 
 <body>  
 
-        <button id="signinButton">Google Signin</button>
+        <h1>catalog app</h1>
+        <br>
 
-        <!-- GOOGLE PLUS SIGN IN-->                
-                <div id="signinButton">
-                <span class="g-signin"
-                    data-scope="openid email"
-                    data-clientid="307676870645-3o103sna7q4q8c4a038jjdchh5s9hsdc.apps.googleusercontent.com"
-                    data-redirecturi="postmessage"
-                    data-accesstype="offline"
-                    data-cookiepolicy="single_host_origin"
-                    data-callback="signInCallback"
-                    data-approvalprompt="force">
-                </span>
-                </div>
+        <h2>login</h2>
+        <hr>
 
-        <div id="result"></div>
+        <p>session state: {{STATE}}  </p>
+        <p>client id: {{CLIENT_ID}}  </p>
+        <p>client secret: {{CLIENT_SECRET}}  </p>
 
+
+        <div class="g-signin2" data-onsuccess="onSignIn"></div>
         <script>
-            function signInCallback(authResult) {
-            if (authResult['code']) {
-                // Hide the sign-in button now that the user is authorized
-                $('#signinButton').attr('style', 'display: none');
-                // Send the one-time-use code to the server, if the server responds, write a 'login successful' message to the web page and then redirect back to the main restaurants page
-                $.ajax({
-                type: 'POST',
-                url: '/gconnect?state={{STATE}}',
-                processData: false,
-                data: authResult['code'],
-                contentType: 'application/octet-stream; charset=utf-8',
-                success: function(result) {
-                    // Handle or verify the server response if necessary.
-                    if (result) {
-                    $('#result').html('Login Successful!</br>'+ result + '</br>Redirecting...')
-                    setTimeout(function() {
-                    window.location.href = "/";
-                    }, 4000);
-                    
-                } else if (authResult['error']) {
-                console.log('There was an error: ' + authResult['error']);
-            } else {
-                    $('#result').html('Failed to make a server-side call. Check your configuration and console.');
-                    }
-                }
-                
-            }); } }
+        async function onSignIn(googleUser) {
+            
+            var profile = googleUser.getBasicProfile();
+            console.log('ID: ' + profile.getId()); // Do not send to your backend! Use an ID token instead.
+            console.log('Name: ' + profile.getName());
+            console.log('Image URL: ' + profile.getImageUrl());
+            console.log('Email: ' + profile.getEmail()); // This is null if the 'email' scope is not present.
+            
+            var id_token = await googleUser.getAuthResponse().id_token;
+            alert('name:'+ profile.getName()+'\n id token:'+ id_token);
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '{{url_for('gconnect',state=STATE)}}');
+            xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+            xhr.send('idtoken='+id_token + '&state='+ '{{STATE}}'+ '&g_id='+ profile.getId());
+            // alert('state:'+'{{STATE}}');
+           
+        }
         </script>
+
+        <p><a href='{{url_for('gdisconnect')}}'> logout </a></p>
+
+
 
         <!--END GOOGLE PLUS SIGN IN -->
 

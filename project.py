@@ -1,15 +1,28 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, make_response
 from flask import session as login_session 
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
-from database_setup import Base, Category, CatalogItem
+from database_setup import Base, Category, CatalogItem, User
 from datetime import datetime
 import random,string
+import os
+
+from authlib.client import OAuth2Session
+import google.oauth2.credentials
+import googleapiclient.discovery
+from google.oauth2 import id_token 
+
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.client import FlowExchangeError
+import httplib2
+import json
+from google.auth.transport import requests
+import requests as req
+
 
 
 # database settings
 app = Flask(__name__)
-app.secret_key = 'secret'
 
 engine = create_engine('sqlite:///catalog.db')
 Base.metadata.bind = engine
@@ -19,15 +32,130 @@ session = DBSession()
 
 
 # auth settings 
+CLIENT_ID = json.loads(open('client_secrets.json','r').read())['web']['client_id']
+CLIENT_SECRET = json.loads(open('client_secrets.json','r').read())['web']['client_secret']
+app.secret_key = CLIENT_SECRET
 
 
-# login route 
-@app.route('/login')
-def showLogin():
-    state = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(32))
-    print(state)
-    login_session['state'] = state
-    return render_template('login.html', STATE = state)
+@app.route('/gconnect',methods=['POST'])
+def gconnect():
+
+    print('gconnect!')
+    #print(request.form['idtoken'])
+    state = request.form['state']
+    token = request.form['idtoken']
+
+    # Validatng state
+    if state != login_session['state']:
+        response = make_response(json.dumps('Invalid State'))
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    print('state validated!')
+    #print('token:',token)
+
+    # checking the validity of the access token 
+
+    idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
+    #print('idinfo:',idinfo)
+     
+    # verifying that the token is for the user
+    g_id = idinfo['sub']
+    if request.form['g_id'] != g_id:
+        response = make_response(json.dumps("Token's user does not match givven user ID."),401)
+        response.headers['Conetnt-Type'] = 'application/json'
+        return response 
+    print('token validated!')
+
+
+    # store the access token in the session for the later use
+    login_session['token'] = token
+    login_session['g_id'] = g_id
+
+    # get user info
+   
+    login_session['username'] = idinfo['given_name']
+    login_session['email'] = idinfo['email']
+
+    # see if user exists, if it does not, make a new one
+    user_id = getUserID(login_session['email'])
+    print('user_id:',user_id)
+    if not user_id: user_id = createUser(login_session)
+
+    login_session['user_id'] = user_id
+
+    output = ''
+    output += '<h1> Welcome, '
+    output += login_session['username']
+    output += '!<img src="'
+    #flash("you are now logged in as %s" % login_session['username'])
+    print('username:', login_session['username'])
+    return output
+
+# functions 
+
+def createUser(login_session):
+
+    print('creating user!')
+    newUser = User(
+        name = login_session['username'], 
+        email=login_session['email'],
+    )
+    session.add(newUser)
+    session.commit()
+    user = session.query(User).filter_by(email = login_session['email']).limit(1).one()
+    print('user id:',user.id, user.name, user.email)
+    return user.id
+
+def getUserInfo(user_id):
+    user = session.query(User).filter_by(id = user_id).one()
+    print('getUserInfo:',user)
+    return user
+
+def getUserID(email):
+    try: 
+        print('email:',email)
+        session = DBSession()
+        user = session.query(User).filter_by(email = email).limit(1).one()
+        print('getUserID:',user.id)
+        return user.id
+    except: 
+        print('failed to get ID by email')
+        return None 
+
+
+# disconnect
+@app.route('/gdisconnect')
+def gdisconnect():
+
+    print('disconnecting!')
+
+    access_token = login_session['token']
+    if access_token is None:
+        print ('Access Token is None')
+        response = make_response(json.dumps('Current user not connected.'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    print ('In gdisconnect access token is %s', access_token)
+    print ('User name is: ')
+    print (login_session['username'])
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['token']
+    h = httplib2.Http()
+    result = h.request(url, 'GET')[0]
+    
+    print ('result is ')
+    print (result)
+    if result['status'] == '200' or '400' :
+        del login_session['token']
+        del login_session['g_id']
+        del login_session['username']
+        del login_session['email']
+        response = make_response(json.dumps('Successfully disconnected.'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    else:
+        response = make_response(json.dumps('Failed to revoke token for given user.', 400))
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 
 
@@ -64,6 +192,11 @@ def showItemInfo(item_id):
 @app.route('/catalog/item/create',methods=['GET','POST'])
 def itemCreate():
 
+    if 'username' not in login_session:
+        return redirect(url_for('homepage'))
+
+    print(login_session)
+
     if request.method == 'GET':
         return render_template('create.html')
     elif request.method == 'POST':
@@ -77,11 +210,15 @@ def itemCreate():
             session.commit()
             category_id = session.query(Category).filter_by(name=request.form['category']).one().id
 
+        user_id = getUserID(login_session['email'])
+        print('current user id:',user_id)
+
         newItem = CatalogItem(
             name=request.form['name'], 
             description=request.form['description'], 
             category_id=category_id, 
-            timestamp=datetime.now())
+            timestamp=datetime.now(),
+            user_id = user_id)
         session.add(newItem)
         session.commit()
         return redirect(url_for('homepage'))
@@ -91,6 +228,14 @@ def itemCreate():
 # editing an item 
 @app.route('/catalog/item/<int:item_id>/edit',methods=['GET', 'POST'])
 def itemEdit(item_id):
+
+    session = DBSession()
+    data_user_id = session.query(CatalogItem).filter_by(id=item_id).one().user_id
+    try: login_user_id = session.query(User).filter_by(email = login_session['email']).limit(1).one().id
+    except: login_user_id = None 
+
+    if data_user_id != login_user_id:
+        return redirect(url_for('homepage'))
    
     session = DBSession()
     editedItem = session.query(CatalogItem).filter_by(id=item_id).one()
@@ -124,6 +269,14 @@ def itemEdit(item_id):
 def itemDelete(item_id):
 
     session = DBSession()
+    data_user_id = session.query(CatalogItem).filter_by(id=item_id).one().user_id
+    try: login_user_id = session.query(User).filter_by(email = login_session['email']).limit(1).one().id
+    except: login_user_id = None 
+
+    if data_user_id != login_user_id:
+        return redirect(url_for('homepage'))
+
+    session = DBSession()
     itemToDelete = session.query(CatalogItem).filter_by(id=item_id).one()
     if request.method == 'POST':
         session.delete(itemToDelete)
@@ -131,6 +284,16 @@ def itemDelete(item_id):
         return redirect(url_for('homepage'))
     else:
         return render_template('delete.html', item=itemToDelete)
+
+
+# login route 
+@app.route('/login')
+def login():
+    state = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(32))
+    print(state)
+    login_session['state'] = state
+    return render_template('login.html', STATE=state, CLIENT_ID=CLIENT_ID, CLIENT_SECRET=CLIENT_SECRET)
+
 
 
 # API endpoint 
@@ -141,7 +304,16 @@ def api():
     return jsonify(MenuItem=[i.serialize for i in data])
 
 
+# session clear - for development use
+@app.route('/sessionclear')
+def sessionclear():
+    login_session.clear()
+    print(login_session)
+    return redirect(url_for('homepage'))
+
+
 
 if __name__ == '__main__':
     app.debug = True
     app.run(host='0.0.0.0', port=5000)
+
