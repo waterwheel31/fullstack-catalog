@@ -12,8 +12,8 @@ Settings: to run the code, you need to:
 - access to localhost:5000 
 
 Access routes: 
-- Web access point -   / 
-- API access point -   /api.json 
+- Website access point -   / 
+- API access point -   /catalog.json 
 
 
 
