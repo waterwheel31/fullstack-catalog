@@ -13,7 +13,11 @@ Settings: to run the code, you need to:
 
 Access routes: 
 - Website access point -   / 
-- API access point -   /catalog.json 
+- API access point 
+    all items:  /json 
+    all items of specific category: /catalog/category/<int:category_id>/json
+    specific item: /catalog/item/<int:item_id>/json
+
 
 
 
